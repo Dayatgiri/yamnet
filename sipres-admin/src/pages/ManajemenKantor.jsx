@@ -147,7 +147,12 @@ const ManajemenKantor = () => {
              <div className="bg-slate-50 p-5 rounded-[2rem] space-y-3">
                 <div className="flex items-center text-slate-500"><MapPin className="w-4 h-4 mr-2 shrink-0" /><p className="text-xs font-bold truncate">{k.alamat}</p></div>
                 <div className="flex items-center text-blue-500 font-bold text-[10px] uppercase tracking-widest">
-                  <Fingerprint className="w-4 h-4 mr-2"/> {k.tipe_absensi} VERIFICATION
+                  {/* Ikon berubah otomatis sesuai tipe_absensi */}
+                  {k.tipe_absensi === 'FACE' && <ScanFace className="w-4 h-4 mr-2" />}
+                  {k.tipe_absensi === 'FINGERPRINT' && <Fingerprint className="w-4 h-4 mr-2" />}
+                  {k.tipe_absensi === 'PIN' && <ShieldCheck className="w-4 h-4 mr-2" />}
+                  
+                  METODE: {k.tipe_absensi}
                 </div>
              </div>
           </div>

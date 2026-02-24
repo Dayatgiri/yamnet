@@ -21,123 +21,139 @@ const Report = () => {
     fetchData();
   }, [filterDate]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const { data: config } = await supabase.from('kantor').select('*').limit(1).single();
-      const { data: emps } = await supabase.from('karyawan').select('*');
+const fetchData = async () => {
+  setLoading(true);
+  try {
+    const { data: config } = await supabase.from('kantor').select('*').limit(1).single();
+    
+    // Ambil karyawan beserta detail shift asli mereka dari database
+    const { data: emps } = await supabase
+      .from('karyawan')
+      .select('*, master_shift(nama_shift, jam_masuk, jam_pulang)');
 
-      const { data: swaps } = await supabase
-        .from('tukar_shift')
-        .select(`
-          *, 
-          pengaju:karyawan!tukar_shift_pengaju_id_fkey(nama_lengkap), 
-          penerima:karyawan!tukar_shift_penerima_id_fkey(nama_lengkap)
-        `)
-        .eq('tanggal_tukar', filterDate)
-        .eq('status_admin', 'Approved');
+    const { data: swaps } = await supabase
+      .from('tukar_shift')
+      .select('*')
+      .eq('tanggal_tukar', filterDate)
+      .eq('status_admin', 'Approved');
 
-      const { data: attendance } = await supabase
-        .from('absensi')
-        .select('*')
-        .filter('waktu_absen', 'gte', `${filterDate}T00:00:00`)
-        .filter('waktu_absen', 'lte', `${filterDate}T23:59:59`);
+    // Penarikan data absen dengan toleransi zona waktu (H-1 s/d H+1)
+    const dateObj = new Date(filterDate);
+    const yesterday = new Date(dateObj); yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(dateObj); tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const processedData = emps.map(emp => {
-        const inData = attendance?.find(a => a.karyawan_id === emp.id && a.jenis_absen?.toLowerCase() === 'masuk');
-        const outData = attendance?.find(a => a.karyawan_id === emp.id && a.jenis_absen?.toLowerCase() === 'pulang');
-        const swapEntry = swaps?.find(s => s.pengaju_id === emp.id || s.penerima_id === emp.id);
+    const { data: attendanceRaw } = await supabase
+      .from('absensi')
+      .select('*')
+      .gte('waktu_absen', yesterday.toISOString().split('T')[0])
+      .lte('waktu_absen', tomorrow.toISOString().split('T')[0]);
 
-        const extractToWIB = (data) => {
-          if (!data) return "-";
-          const date = new Date(data.waktu_absen || data.created_at);
-          return date.toLocaleTimeString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }).replace('.', ':');
-        };
+    // Filter absen yang masuk ke tanggal filter (WIB)
+    const attendance = attendanceRaw?.filter(a => {
+      const localDate = new Date(a.waktu_absen).toLocaleDateString('en-CA');
+      return localDate === filterDate;
+    });
 
-        // --- 1. TENTUKAN TARGET JAM DI LEVEL MAPPING (SINKRON DENGAN MASTER SHIFT) ---
-        let targetMasuk = config?.jam_masuk || "08:00";
-        let targetPulang = config?.jam_pulang || "17:00";
+    const processedData = emps.map(emp => {
+      const inData = attendance?.find(a => 
+        a.karyawan_id === emp.id && a.jenis_absen?.toLowerCase().trim() === 'masuk'
+      );
+      const outData = attendance?.find(a => 
+        a.karyawan_id === emp.id && a.jenis_absen?.toLowerCase().trim() === 'pulang'
+      );
 
-        if (swapEntry) {
-          const rawJamLawan = (swapEntry.pengaju_id === emp.id) 
-            ? swapEntry.shift_asli_penerima 
-            : swapEntry.shift_asli_pengaju;
+      const swapEntry = swaps?.find(s => s.pengaju_id === emp.id || s.penerima_id === emp.id);
 
-          if (rawJamLawan) {
-            // Bersihkan format "08:00:00" menjadi "08:00" agar perbandingan string akurat
-            const cleanJamMasuk = rawJamLawan.split(':').slice(0, 2).join(':'); 
-            targetMasuk = cleanJamMasuk;
-            
-            // LOGIKA MASTER SHIFT: Pagi (08:00) -> Pulang 17:00 | Malam (17:00) -> Pulang 23:59
-            targetPulang = (cleanJamMasuk === "08:00") ? "17:00" : "23:59";
-          }
+      // --- LOGIKA: SEPENUHNYA MENGIKUTI DATABASE ---
+      let targetMasuk = emp.master_shift?.jam_masuk || "08:00:00";
+      let targetPulang = emp.master_shift?.jam_pulang || "17:00:00";
+
+      // Jika ada tukar shift, ambil jam dari kolom shift_asli milik LAWAN tukar
+      if (swapEntry) {
+        if (swapEntry.pengaju_id === emp.id) {
+          // Jika saya pengaju, target saya adalah jam milik penerima
+          targetMasuk = swapEntry.shift_asli_penerima;
+          targetPulang = swapEntry.pulang_asli_penerima; // Pastikan kolom ini ada di DB
+        } else {
+          // Jika saya penerima, target saya adalah jam milik pengaju
+          targetMasuk = swapEntry.shift_asli_pengaju;
+          targetPulang = swapEntry.pulang_asli_pengaju; // Pastikan kolom ini ada di DB
         }
+      }
 
-        // --- 2. FUNGSI STATUS YANG IDENTIK ---
-        const getStatus = (jamAbsenStr, type) => {
-          if (jamAbsenStr === "-") return { id: 'none', txt: "BELUM ABSEN", col: "text-slate-400" };
+      // Bersihkan format jam (08:00:00 -> 08:00)
+      const cleanTargetM = targetMasuk?.split(':').slice(0, 2).join(':') || "08:00";
+      const cleanTargetP = targetPulang?.split(':').slice(0, 2).join(':') || "17:00";
 
-          const [hAbsen, mAbsen] = jamAbsenStr.split(':').map(Number);
-          const targetStr = type === 'in' ? targetMasuk : targetPulang;
-          const [hTarget, mTarget] = targetStr.split(':').map(Number);
-          
-          const totalMenitAbsen = hAbsen * 60 + mAbsen;
-          const totalMenitTarget = hTarget * 60 + mTarget;
-          const selisih = totalMenitAbsen - totalMenitTarget;
+      const extractToWIB = (data) => {
+        if (!data) return "-";
+        const date = new Date(data.waktu_absen);
+        return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':');
+      };
 
-          if (type === 'in') {
-            if (selisih > 0) {
-              const h = Math.floor(selisih / 60);
-              const m = selisih % 60;
-              return { id: 'late', txt: `TERLAMBAT (${h > 0 ? h + 'j ' : ''}${m}m)`, col: "text-rose-500" };
-            }
-            return { id: 'ontime', txt: "TEPAT WAKTU", col: "text-emerald-500" };
-          }
+const getStatus = (jamAbsenStr, type) => {
+  if (jamAbsenStr === "-") return { id: 'none', txt: "BELUM ABSEN", col: "text-slate-400" };
 
-          if (type === 'out') {
-            // Jika absen sebelum targetPulang (selisih negatif), pasti PULANG AWAL
-            if (selisih < 0) {
-              const menitAwal = Math.abs(selisih);
-              const h = Math.floor(menitAwal / 60);
-              const m = menitAwal % 60;
-              return { 
-                id: 'early', 
-                txt: `PULANG AWAL (${h > 0 ? h + 'j ' : ''}${m}m)`, 
-                col: "text-rose-500" 
-              };
-            }
-            return { id: 'ontime', txt: "HADIR", col: "text-emerald-500" };
-          }
-        };
+  const [hAbsen, mAbsen] = jamAbsenStr.split(':').map(Number);
+  const targetStr = type === 'in' ? cleanTargetM : cleanTargetP;
+  const [hTarget, mTarget] = targetStr.split(':').map(Number);
+  
+  const totalMenitAbsen = hAbsen * 60 + mAbsen;
+  const totalMenitTarget = hTarget * 60 + mTarget;
+  const selisih = totalMenitAbsen - totalMenitTarget;
 
-        const jamM = extractToWIB(inData);
-        const jamP = extractToWIB(outData);
-
-        return {
-          karyawan_id: emp.id,
-          nama: emp.nama_lengkap,
-          nik: emp.nik || '-',
-          isSwapping: !!swapEntry,
-          jamMasuk: jamM,
-          jamPulang: jamP,
-          statM: getStatus(jamM, 'in'),
-          statP: getStatus(jamP, 'out'),
-          idAbsenMasuk: inData?.id,
-          idAbsenPulang: outData?.id
-        };
-      });
-
-      setReports(processedData);
-    } catch (error) { 
-      console.error("Error fetching report:", error); 
-    } finally { 
-      setLoading(false); 
-    }
+  // Fungsi pembantu untuk memformat menit ke format "Xj Ym"
+  const formatDurasi = (menit) => {
+    const m = Math.abs(menit);
+    const h = Math.floor(m / 60);
+    const mins = m % 60;
+    return `${h > 0 ? h + 'j ' : ''}${mins}m`;
   };
+
+  if (type === 'in') {
+    if (selisih > 0) {
+      return { id: 'late', txt: `TERLAMBAT (${formatDurasi(selisih)})`, col: "text-rose-500" };
+    }
+    return { id: 'ontime', txt: "TEPAT WAKTU", col: "text-emerald-500" };
+  }
+
+  if (type === 'out') {
+    // Jika selisih negatif, artinya absen pulang dilakukan SEBELUM jam target (Pulang Cepat)
+    if (selisih < 0) {
+      return { 
+        id: 'early', 
+        txt: `PULANG CEPAT (${formatDurasi(selisih)})`, 
+        col: "text-rose-500" 
+      };
+    }
+    return { id: 'ontime', txt: "HADIR", col: "text-emerald-500" };
+  }
+};
+
+      const jamM = extractToWIB(inData);
+      const jamP = extractToWIB(outData);
+
+      return {
+        nama: emp.nama_lengkap,
+        nik: emp.nik || '-',
+        isSwapping: !!swapEntry,
+        jamMasuk: jamM,
+        jamPulang: jamP,
+        statM: getStatus(jamM, 'in'),
+        statP: getStatus(jamP, 'out'),
+        // Simpan info target untuk pengecekan
+        targetM: cleanTargetM,
+        targetP: cleanTargetP
+      };
+    });
+
+    setReports(processedData);
+  } catch (error) {
+    console.error("Fetch error:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filteredData = reports.filter(row => row.nama.toLowerCase().includes(searchTerm.toLowerCase()));
   const currentEntries = filteredData.slice((currentPage - 1) * entriesPerPage, currentPage * entriesPerPage);

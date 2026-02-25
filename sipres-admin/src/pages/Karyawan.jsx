@@ -3,29 +3,29 @@ import { supabase } from '../supabaseClient';
 import { 
   User, Camera, Pencil, Trash2, Plus, X, 
   Save, Lock, Loader2, Briefcase, Hash, 
-  MapPin, Phone, Mail, Search, AlertCircle, Clock
+  Phone, Mail, Search, AlertCircle, Clock
 } from 'lucide-react';
 
 const Karyawan = () => {
   // --- STATE MANAGEMENT ---
   const [karyawan, setKaryawan] = useState([]);
-  const [shifts, setShifts] = useState([]); // State untuk daftar shift
+  const [shifts, setShifts] = useState([]);
+  const [jabatans, setJabatans] = useState([]); // State untuk daftar jabatan
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
-  // State Data Lengkap Karyawan (Ditambah shift_id)
   const [formData, setFormData] = useState({ 
     nama_lengkap: '', 
     nik: '',
-    jabatan: '',
+    jabatan_id: '', // Diubah menjadi ID untuk relasi
     departemen: '',
     nomor_wa: '',
     email: '',
     alamat: '',
     password: '123456',
-    shift_id: '' // Field baru
+    shift_id: '' 
   });
   
   const [selectedFile, setSelectedFile] = useState(null);
@@ -34,7 +34,8 @@ const Karyawan = () => {
   // --- SIDE EFFECTS ---
   useEffect(() => {
     fetchKaryawan();
-    fetchShifts(); // Ambil data shift saat load
+    fetchShifts();
+    fetchJabatans(); // Load daftar jabatan
   }, []);
 
   // --- DATABASE ACTIONS ---
@@ -43,13 +44,17 @@ const Karyawan = () => {
     if (data) setShifts(data);
   }
 
+  async function fetchJabatans() {
+    const { data } = await supabase.from('jabatan').select('*').order('nama_jabatan');
+    if (data) setJabatans(data);
+  }
+
   async function fetchKaryawan() {
     try {
       setLoading(true);
-      // MODIFIKASI: Sorting diubah agar mengelompok berdasarkan shift_id lebih dulu, baru berdasarkan waktu buat
       const { data, error } = await supabase
         .from('karyawan')
-        .select('*, master_shift(nama_shift, jam_masuk)')
+        .select('*, master_shift(nama_shift, jam_masuk), jabatan(nama_jabatan, departemen)') // JOIN Jabatan
         .order('shift_id', { ascending: true }) 
         .order('created_at', { ascending: false });
       
@@ -85,10 +90,13 @@ const Karyawan = () => {
       const payload = { 
         ...formData, 
         shift_id: formData.shift_id || null,
+        jabatan_id: formData.jabatan_id || null, // Pastikan ID jabatan dikirim
         password: formData.password || '123456' 
       };
 
+      // Hapus objek hasil JOIN agar tidak merusak query INSERT/UPDATE
       delete payload.master_shift;
+      delete payload.jabatan; 
 
       if (editingId) {
         const { error } = await supabase.from('karyawan').update(payload).eq('id', editingId);
@@ -132,7 +140,7 @@ const Karyawan = () => {
     setIsModalOpen(false);
     setEditingId(null);
     setFormData({ 
-      nama_lengkap: '', nik: '', jabatan: '', departemen: '', 
+      nama_lengkap: '', nik: '', jabatan_id: '', departemen: '', 
       nomor_wa: '', email: '', alamat: '', password: '123456', shift_id: '' 
     });
     setSelectedFile(null);
@@ -205,8 +213,9 @@ const Karyawan = () => {
                     <div className="inline-flex items-center px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase mb-2">
                       <Clock size={10} className="mr-1"/> {k.master_shift?.nama_shift || 'BELUM SET SHIFT'}
                     </div>
-                    <p className="font-black text-slate-700 text-xs uppercase">{k.jabatan || 'STAFF'}</p>
-                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">{k.departemen || 'UMUM'}</p>
+                    {/* Mengambil nama_jabatan dari relasi join */}
+                    <p className="font-black text-slate-700 text-xs uppercase">{k.jabatan?.nama_jabatan || 'STAFF'}</p>
+                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">{k.jabatan?.departemen || 'UMUM'}</p>
                   </td>
                   <td className="px-10 py-6 text-left">
                     <p className="text-xs font-bold text-slate-600">{k.nomor_wa || k.email || '-'}</p>
@@ -244,7 +253,6 @@ const Karyawan = () => {
             <form onSubmit={handleSubmit} className="space-y-10 text-left">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
                 
-                {/* Bagian Foto Master */}
                 <div className="flex flex-col items-center space-y-4">
                   <div className="relative group">
                     <img src={previewUrl || "https://ui-avatars.com/api/?name=User&background=f8fafc&color=cbd5e1"} className="w-52 h-52 rounded-[3.5rem] object-cover border-8 border-slate-50 shadow-2xl group-hover:border-blue-500 transition-all" alt="Preview"/>
@@ -255,7 +263,6 @@ const Karyawan = () => {
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Biometrik Wajah</p>
                 </div>
 
-                {/* Input Data Utama */}
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest ml-3 flex items-center gap-2"><User size={12}/> Nama Lengkap *</label>
@@ -266,7 +273,6 @@ const Karyawan = () => {
                     <input className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold outline-none focus:border-blue-600 transition-all" value={formData.nik} onChange={e => setFormData({...formData, nik: e.target.value})} />
                   </div>
 
-                  {/* DROP DOWN SHIFT KERJA */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-3 flex items-center gap-2"><Clock size={12}/> Penempatan Shift Kerja</label>
                     <select 
@@ -282,14 +288,31 @@ const Karyawan = () => {
                     </select>
                   </div>
 
+                  {/* INTEGRASI JABATAN DROPDOWN */}
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-3 flex items-center gap-2"><Briefcase size={12}/> Jabatan</label>
-                    <input className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold outline-none focus:border-blue-600 transition-all" value={formData.jabatan} onChange={e => setFormData({...formData, jabatan: e.target.value})} />
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-3 flex items-center gap-2"><Briefcase size={12}/> Jabatan & Departemen</label>
+                    <select 
+                      required
+                      className="w-full px-7 py-5 bg-indigo-50 border-2 border-indigo-100 rounded-3xl font-bold outline-none focus:border-indigo-600 transition-all text-slate-800 appearance-none"
+                      value={formData.jabatan_id} 
+                      onChange={e => {
+                        const sel = jabatans.find(j => j.id.toString() === e.target.value);
+                        setFormData({
+                          ...formData, 
+                          jabatan_id: e.target.value,
+                          departemen: sel ? sel.departemen : ''
+                        });
+                      }}
+                    >
+                      <option value="">-- Pilih Jabatan --</option>
+                      {jabatans.map(j => (
+                        <option key={j.id} value={j.id}>{j.nama_jabatan} ({j.departemen})</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* Baris Kontak & Keamanan */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-3 flex items-center gap-2"><Phone size={12}/> No. WhatsApp</label>

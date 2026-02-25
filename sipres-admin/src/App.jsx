@@ -13,11 +13,13 @@ import Report from './pages/Report';
 import ProfilAdmin from './pages/ProfilAdmin';
 import ManajemenAdmin from './pages/ManajemenAdmin';
 import TukarShiftAdmin from './pages/TukarShiftAdmin';
+import Jabatan from './pages/Jabatan'; // IMPORT HALAMAN JABATAN BARU
 
 // Import Icons
 import { 
   LayoutDashboard, Users, MapPin, 
-  UserCircle, FileText, Shield, ArrowLeftRight 
+  UserCircle, FileText, Shield, ArrowLeftRight,
+  Briefcase // Icon untuk Jabatan
 } from 'lucide-react';
 
 function App() {
@@ -41,10 +43,8 @@ function App() {
       setSession(session);
     });
 
-    // Jalankan penghitungan notifikasi pertama kali
     fetchNotifCount();
 
-    // Setup Realtime Listener untuk tabel tukar_shift
     const channel = supabase
       .channel('realtime_tukar_shift')
       .on('postgres_changes', 
@@ -59,7 +59,6 @@ function App() {
     };
   }, []);
 
-  // Fungsi untuk menghitung permintaan yang butuh approval admin
   const fetchNotifCount = async () => {
     const { count, error } = await supabase
       .from('tukar_shift')
@@ -73,10 +72,12 @@ function App() {
   if (isRegisterPath) return <Register />;
   if (!session) return <Login />;
 
+  // --- INTEGRASI MENU JABATAN ---
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'karyawan', label: 'Database Karyawan', icon: Users },
-    { id: 'tukar_shift', label: 'Tukar Shift', icon: ArrowLeftRight, badge: notifCount }, // Kirim badge ke sidebar
+    { id: 'jabatan', label: 'Jabatan & Gaji', icon: Briefcase }, // MENU BARU
+    { id: 'tukar_shift', label: 'Tukar Shift', icon: ArrowLeftRight, badge: notifCount },
     { id: 'manajemen_kantor', label: 'Kelola Kantor', icon: MapPin }, 
     { id: 'manajemen_admin', label: 'Otoritas Admin', icon: Shield },
     { id: 'report', label: 'Laporan Log', icon: FileText },
@@ -94,6 +95,7 @@ function App() {
     switch(activeTab) {
       case 'dashboard': return 'Ringkasan Sistem';
       case 'karyawan': return 'Database Karyawan';
+      case 'jabatan': return 'Struktur Jabatan & Gaji'; // TITLE BARU
       case 'tukar_shift': return 'Approval Pertukaran Shift';
       case 'manajemen_kantor': return 'Manajemen Unit & Operasional';
       case 'manajemen_admin': return 'Otoritas Administrator';
@@ -104,7 +106,7 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 text-left">
       <Sidebar 
         menuItems={menuItems} 
         activeTab={activeTab} 
@@ -119,6 +121,7 @@ function App() {
           <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'karyawan' && <Karyawan />}
+            {activeTab === 'jabatan' && <Jabatan />} {/* RENDER HALAMAN JABATAN */}
             {activeTab === 'tukar_shift' && <TukarShiftAdmin refreshNotif={fetchNotifCount} />} 
             {activeTab === 'manajemen_kantor' && <ManajemenKantor />} 
             {activeTab === 'manajemen_admin' && <ManajemenAdmin />}

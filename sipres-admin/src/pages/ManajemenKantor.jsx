@@ -4,7 +4,8 @@ import {
   MapPin, Clock, Save, Building2, Target, 
   Fingerprint, ScanFace, Settings2,
   X, Edit2, Trash2, Plus, ShieldCheck,
-  Upload, Image as ImageIcon, MousePointer2
+  Upload, Image as ImageIcon, MousePointer2,
+  Zap // Tambahkan ikon Zap untuk fitur Quick Absen
 } from 'lucide-react';
 
 const ManajemenKantor = () => {
@@ -178,7 +179,6 @@ const ManajemenKantor = () => {
 
             {/* AREA UPLOAD LOGO DUAL */}
             <div className="flex flex-wrap gap-4">
-                {/* 1. Logo Utama */}
                 <div className="flex items-center bg-slate-50 p-2 rounded-2xl border border-slate-100 shadow-sm">
                     <div className="w-10 h-10 bg-white rounded-lg overflow-hidden border border-slate-200 mr-3 flex items-center justify-center">
                         {logoUrl ? <img src={logoUrl} alt="Main" className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-300 w-5 h-5"/>}
@@ -189,7 +189,6 @@ const ManajemenKantor = () => {
                     </label>
                 </div>
 
-                {/* 2. Logo Tombol */}
                 <div className="flex items-center bg-slate-900 p-2 rounded-2xl shadow-lg shadow-slate-200">
                     <div className="w-10 h-10 bg-slate-800 rounded-lg overflow-hidden border border-slate-700 mr-3 flex items-center justify-center p-1">
                         {buttonLogoUrl ? <img src={buttonLogoUrl} alt="Btn" className="w-full h-full object-contain" /> : <MousePointer2 className="text-slate-500 w-4 h-4"/>}
@@ -229,6 +228,11 @@ const ManajemenKantor = () => {
                 <div className="flex items-center text-amber-600 font-black text-[10px] uppercase tracking-widest pt-2 border-t border-slate-200">
                     <Clock className="w-4 h-4 mr-2" /> Target: {k.min_jam_bulanan || 112} Jam / Bulan
                 </div>
+                {/* Info Metode Absensi di List */}
+                <div className="flex items-center text-blue-600 font-black text-[10px] uppercase tracking-widest">
+                    {k.tipe_absensi === 'QUICK' ? <Zap className="w-3 h-3 mr-2"/> : <Settings2 className="w-3 h-3 mr-2" />} 
+                    Verifikasi: {k.tipe_absensi}
+                </div>
              </div>
           </div>
         )) : shiftList.map((s) => (
@@ -260,7 +264,7 @@ const ManajemenKantor = () => {
         ))}
       </div>
 
-      {/* MODAL GABUNGAN (TETAP SAMA) */}
+      {/* MODAL GABUNGAN */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl my-auto animate-in zoom-in duration-300 overflow-hidden text-left">
@@ -287,7 +291,7 @@ const ManajemenKantor = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-amber-600 ml-2 tracking-widest">Target Jam Kerja Bulanan (Syarat Gaji)</label>
+                                <label className="text-[10px] font-black uppercase text-amber-600 ml-2 tracking-widest">Target Jam Kerja Bulanan</label>
                                 <div className="relative">
                                     <input required type="number" className="w-full bg-slate-50 border-2 border-slate-100 focus:border-amber-600 rounded-2xl px-6 py-4 font-black outline-none transition-all" value={formData.min_jam_bulanan} onChange={e => setFormData({...formData, min_jam_bulanan: e.target.value})} />
                                     <span className="absolute right-6 top-1/2 -translate-y-1/2 font-bold text-slate-400">Jam / Bulan</span>
@@ -311,22 +315,25 @@ const ManajemenKantor = () => {
 
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black uppercase text-blue-600 ml-2 tracking-widest">Metode Verifikasi</label>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {['FACE', 'FINGERPRINT', 'PIN'].map((method) => (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    {[
+                                      { id: 'FACE', icon: <ScanFace size={14}/> },
+                                      { id: 'FINGERPRINT', icon: <Fingerprint size={14}/> },
+                                      { id: 'PIN', icon: <ShieldCheck size={14}/> },
+                                      { id: 'QUICK', icon: <Zap size={14}/> } // Tombol Baru
+                                    ].map((method) => (
                                         <button
-                                            key={method}
+                                            key={method.id}
                                             type="button"
-                                            onClick={() => setFormData({...formData, tipe_absensi: method})}
+                                            onClick={() => setFormData({...formData, tipe_absensi: method.id})}
                                             className={`py-4 rounded-2xl font-black text-[10px] border-2 transition-all flex items-center justify-center gap-2 ${
-                                                formData.tipe_absensi === method 
+                                                formData.tipe_absensi === method.id 
                                                 ? 'border-blue-600 bg-blue-50 text-blue-600' 
                                                 : 'border-slate-100 bg-slate-50 text-slate-400'
                                             }`}
                                         >
-                                            {method === 'FACE' && <ScanFace size={14}/>}
-                                            {method === 'FINGERPRINT' && <Fingerprint size={14}/>}
-                                            {method === 'PIN' && <ShieldCheck size={14}/>}
-                                            {method}
+                                            {method.icon}
+                                            {method.id}
                                         </button>
                                     ))}
                                 </div>

@@ -10,7 +10,7 @@ const Karyawan = () => {
   // --- STATE MANAGEMENT ---
   const [karyawan, setKaryawan] = useState([]);
   const [shifts, setShifts] = useState([]);
-  const [jabatans, setJabatans] = useState([]); // State untuk daftar jabatan
+  const [jabatans, setJabatans] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -19,7 +19,7 @@ const Karyawan = () => {
   const [formData, setFormData] = useState({ 
     nama_lengkap: '', 
     nik: '',
-    jabatan_id: '', // Diubah menjadi ID untuk relasi
+    jabatan_id: '',
     departemen: '',
     nomor_wa: '',
     email: '',
@@ -35,7 +35,7 @@ const Karyawan = () => {
   useEffect(() => {
     fetchKaryawan();
     fetchShifts();
-    fetchJabatans(); // Load daftar jabatan
+    fetchJabatans();
   }, []);
 
   // --- DATABASE ACTIONS ---
@@ -54,8 +54,8 @@ const Karyawan = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('karyawan')
-        .select('*, master_shift(nama_shift, jam_masuk), jabatan(nama_jabatan, departemen)') // JOIN Jabatan
-        .order('shift_id', { ascending: true }) 
+        // DITAMBAHKAN: jam_pulang ke dalam select join master_shift
+        .select('*, master_shift(nama_shift, jam_masuk, jam_pulang), jabatan(nama_jabatan, departemen)')
         .order('created_at', { ascending: false });
       
       if (error) throw error;
@@ -90,11 +90,10 @@ const Karyawan = () => {
       const payload = { 
         ...formData, 
         shift_id: formData.shift_id || null,
-        jabatan_id: formData.jabatan_id || null, // Pastikan ID jabatan dikirim
+        jabatan_id: formData.jabatan_id || null,
         password: formData.password || '123456' 
       };
 
-      // Hapus objek hasil JOIN agar tidak merusak query INSERT/UPDATE
       delete payload.master_shift;
       delete payload.jabatan; 
 
@@ -213,7 +212,12 @@ const Karyawan = () => {
                     <div className="inline-flex items-center px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase mb-2">
                       <Clock size={10} className="mr-1"/> {k.master_shift?.nama_shift || 'BELUM SET SHIFT'}
                     </div>
-                    {/* Mengambil nama_jabatan dari relasi join */}
+                    {/* DITAMBAHKAN: Jam Shift di bawah nama shift */}
+                    {k.master_shift && (
+                      <p className="text-[9px] font-black text-slate-400 -mt-1 mb-2 tracking-tighter italic">
+                        ⏰ {k.master_shift.jam_masuk.substring(0,5)} - {k.master_shift.jam_pulang.substring(0,5)}
+                      </p>
+                    )}
                     <p className="font-black text-slate-700 text-xs uppercase">{k.jabatan?.nama_jabatan || 'STAFF'}</p>
                     <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">{k.jabatan?.departemen || 'UMUM'}</p>
                   </td>
@@ -283,12 +287,11 @@ const Karyawan = () => {
                     >
                       <option value="">-- Pilih Jam Kerja --</option>
                       {shifts.map(s => (
-                        <option key={s.id} value={s.id}>{s.nama_shift} ({s.jam_masuk.substring(0,5)})</option>
+                        <option key={s.id} value={s.id}>{s.nama_shift} ({s.jam_masuk.substring(0,5)} - {s.jam_pulang.substring(0,5)})</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* INTEGRASI JABATAN DROPDOWN */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-3 flex items-center gap-2"><Briefcase size={12}/> Jabatan & Departemen</label>
                     <select 

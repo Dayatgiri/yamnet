@@ -10,7 +10,7 @@ const Karyawan = () => {
   // --- STATE MANAGEMENT ---
   const [karyawan, setKaryawan] = useState([]);
   const [shifts, setShifts] = useState([]);
-  const [jabatans, setJabatans] = useState([]); 
+  const [jabatans, setJabatans] = useState([]); // State untuk daftar jabatan
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -19,7 +19,7 @@ const Karyawan = () => {
   const [formData, setFormData] = useState({ 
     nama_lengkap: '', 
     nik: '',
-    jabatan_id: '', 
+    jabatan_id: '', // Diubah menjadi ID untuk relasi
     departemen: '',
     nomor_wa: '',
     email: '',
@@ -35,7 +35,7 @@ const Karyawan = () => {
   useEffect(() => {
     fetchKaryawan();
     fetchShifts();
-    fetchJabatans(); 
+    fetchJabatans(); // Load daftar jabatan
   }, []);
 
   // --- DATABASE ACTIONS ---
@@ -54,11 +54,8 @@ const Karyawan = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('karyawan')
-        .select(`
-          *, 
-          master_shift(nama_shift, jam_masuk), 
-          jabatan:jabatan_id(nama_jabatan, departemen)
-        `)
+        .select('*, master_shift(nama_shift, jam_masuk), jabatan(nama_jabatan, departemen)') // JOIN Jabatan
+        .order('shift_id', { ascending: true }) 
         .order('created_at', { ascending: false });
       
       if (error) throw error;
@@ -86,20 +83,18 @@ const Karyawan = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nama_lengkap) return alert("Nama Lengkap wajib diisi!");
-    if (!formData.jabatan_id) return alert("Silakan pilih Jabatan!");
     
     setLoading(true);
     try {
       let userId = editingId;
-      // Konversi ID ke Integer agar cocok dengan tabel Jabatan
       const payload = { 
         ...formData, 
-        shift_id: formData.shift_id ? parseInt(formData.shift_id) : null,
-        jabatan_id: formData.jabatan_id ? parseInt(formData.jabatan_id) : null,
+        shift_id: formData.shift_id || null,
+        jabatan_id: formData.jabatan_id || null, // Pastikan ID jabatan dikirim
         password: formData.password || '123456' 
       };
 
-      // Hapus field relasi agar tidak error saat insert/update
+      // Hapus objek hasil JOIN agar tidak merusak query INSERT/UPDATE
       delete payload.master_shift;
       delete payload.jabatan; 
 
@@ -119,7 +114,7 @@ const Karyawan = () => {
         if (uploadError) throw uploadError;
       }
 
-      alert("🎉 Data Karyawan & Relasi Jabatan Berhasil Disimpan!");
+      alert("Data Karyawan Berhasil Disimpan!");
       closeModal();
       fetchKaryawan();
     } catch (err) {
@@ -218,8 +213,9 @@ const Karyawan = () => {
                     <div className="inline-flex items-center px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase mb-2">
                       <Clock size={10} className="mr-1"/> {k.master_shift?.nama_shift || 'BELUM SET SHIFT'}
                     </div>
-                    <p className="font-black text-slate-700 text-xs uppercase">{k.jabatan?.nama_jabatan || 'TANPA JABATAN'}</p>
-                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">{k.jabatan?.departemen || k.departemen || 'UMUM'}</p>
+                    {/* Mengambil nama_jabatan dari relasi join */}
+                    <p className="font-black text-slate-700 text-xs uppercase">{k.jabatan?.nama_jabatan || 'STAFF'}</p>
+                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">{k.jabatan?.departemen || 'UMUM'}</p>
                   </td>
                   <td className="px-10 py-6 text-left">
                     <p className="text-xs font-bold text-slate-600">{k.nomor_wa || k.email || '-'}</p>
@@ -230,7 +226,7 @@ const Karyawan = () => {
                   </td>
                   <td className="px-10 py-6">
                     <div className="flex justify-center space-x-3">
-                      <button onClick={() => { setEditingId(k.id); setFormData({...k, jabatan_id: k.jabatan_id || ''}); setPreviewUrl(getAvatarUrl(k.id)); setIsModalOpen(true); }} className="p-4 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Pencil size={18} /></button>
+                      <button onClick={() => { setEditingId(k.id); setFormData(k); setPreviewUrl(getAvatarUrl(k.id)); setIsModalOpen(true); }} className="p-4 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Pencil size={18} /></button>
                       <button onClick={() => handleDelete(k.id, k.nama_lengkap)} className="p-4 bg-slate-50 text-slate-300 hover:bg-rose-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Trash2 size={18} /></button>
                     </div>
                   </td>
@@ -292,6 +288,7 @@ const Karyawan = () => {
                     </select>
                   </div>
 
+                  {/* INTEGRASI JABATAN DROPDOWN */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-3 flex items-center gap-2"><Briefcase size={12}/> Jabatan & Departemen</label>
                     <select 

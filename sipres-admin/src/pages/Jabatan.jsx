@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { 
   Briefcase, Plus, Save, Trash2, Edit2, X, 
   DollarSign, Landmark, Users, Clock, AlertCircle, CheckCircle2,
-  Calendar
+  Calendar, Coins
 } from 'lucide-react';
 
 const Jabatan = () => {
@@ -15,7 +15,7 @@ const Jabatan = () => {
   const [filterMonth, setFilterMonth] = useState(new Date().toISOString().substring(0, 7));
   
   const [formData, setFormData] = useState({ 
-    id: null, nama_jabatan: '', departemen: '', gaji_pokok: '' 
+    id: null, nama_jabatan: '', departemen: '', gaji_pokok: '', tunjangan: 0 
   });
 
   useEffect(() => {
@@ -23,7 +23,7 @@ const Jabatan = () => {
     else fetchRekapGaji();
   }, [activeTab, filterMonth]);
 
-  // --- LOGIKA MASTER JABATAN ---
+  // --- LOGIKA MASTER JABATAN (READ) ---
   const fetchJabatan = async () => {
     setLoading(true);
     try {
@@ -36,30 +36,26 @@ const Jabatan = () => {
     }
   };
 
-  // --- LOGIKA REKAP GAJI & JAM KERJA ---
+  // --- LOGIKA REKAP GAJI ---
   const fetchRekapGaji = async () => {
     setLoading(true);
     try {
-      // 1. Ambil target jam dari kantor
       const { data: kantorData } = await supabase.from('kantor').select('min_jam_bulanan').limit(1).single();
       const targetJam = kantorData?.min_jam_bulanan || 112;
 
-      // 2. Ambil data karyawan beserta relasi jabatan & shift
-
-const { data: emps, error: errEmp } = await supabase
-  .from('karyawan')
-  .select(`
-    id, 
-    nama_lengkap, 
-    departemen, 
-    jabatan_id,
-    jabatan!inner (nama_jabatan, gaji_pokok), 
-    master_shift:shift_id (jam_masuk, jam_pulang)
-  `);
+      const { data: emps, error: errEmp } = await supabase
+        .from('karyawan')
+        .select(`
+          id, 
+          nama_lengkap, 
+          departemen, 
+          jabatan_id,
+          jabatan!inner (nama_jabatan, gaji_pokok, tunjangan), 
+          master_shift:shift_id (jam_masuk, jam_pulang)
+        `);
 
       if (errEmp) throw errEmp;
 
-      // 3. LOGIKA TANGGAL AMAN (Inclusive Start, Exclusive End)
       const year = parseInt(filterMonth.split('-')[0]);
       const month = parseInt(filterMonth.split('-')[1]);
       const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0)).toISOString();
@@ -73,7 +69,6 @@ const { data: emps, error: errEmp } = await supabase
 
       if (errAtt) throw errAtt;
 
-      // 4. Proses Akumulasi Jam Kerja Efektif
       const processed = emps.map(emp => {
         const empLogs = attendance?.filter(a => a.karyawan_id === emp.id) || [];
         let totalMinutes = 0;
@@ -135,18 +130,32 @@ const { data: emps, error: errEmp } = await supabase
     return durasi > 0 ? durasi : 0;
   };
 
+  // --- LOGIKA SIMPAN KE DATABASE (CREATE & UPDATE) ---
   const handleSave = async () => {
+    // Memastikan payload bersih dan tipe data numerik benar
     const payload = { 
       nama_jabatan: formData.nama_jabatan, 
       departemen: formData.departemen, 
-      gaji_pokok: parseFloat(formData.gaji_pokok) 
+      gaji_pokok: parseFloat(formData.gaji_pokok) || 0,
+      tunjangan: parseFloat(formData.tunjangan) || 0 
     };
+
     try {
-      if (formData.id) await supabase.from('jabatan').update(payload).eq('id', formData.id);
-      else await supabase.from('jabatan').insert([payload]);
+      if (formData.id) {
+        // UPDATE: Kirim perubahan berdasarkan ID
+        const { error } = await supabase.from('jabatan').update(payload).eq('id', formData.id);
+        if (error) throw error;
+      } else {
+        // INSERT: Tambah data baru
+        const { error } = await supabase.from('jabatan').insert([payload]);
+        if (error) throw error;
+      }
+      
       setIsModalOpen(false);
-      fetchJabatan();
-    } catch (err) { alert(err.message); }
+      fetchJabatan(); // Refresh tabel setelah simpan
+    } catch (err) { 
+      alert("Gagal menyimpan ke database: " + err.message); 
+    }
   };
 
   return (
@@ -163,10 +172,10 @@ const { data: emps, error: errEmp } = await supabase
               <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-100"><Briefcase /></div>
               <div>
                 <h3 className="text-xl font-black text-slate-800 tracking-tight">Master Data Jabatan</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase italic">Konfigurasi Salary Base</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase italic">Konfigurasi Salary & Tunjangan</p>
               </div>
             </div>
-            <button onClick={() => { setFormData({id: null, nama_jabatan:'', departemen:'', gaji_pokok:''}); setIsModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest tracking-tight">Tambah Jabatan</button>
+            <button onClick={() => { setFormData({id: null, nama_jabatan:'', departemen:'', gaji_pokok:'', tunjangan: 0}); setIsModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest tracking-tight">Tambah Jabatan</button>
           </div>
 
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
@@ -176,19 +185,32 @@ const { data: emps, error: errEmp } = await supabase
                   <th className="px-10 py-7">Nama Jabatan</th>
                   <th className="px-6 py-7">Departemen</th>
                   <th className="px-6 py-7">Gaji Pokok</th>
+                  <th className="px-6 py-7 text-emerald-400">Tunjangan</th>
                   <th className="px-10 py-7 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 font-bold text-sm">
                 {loading ? (
-                    <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold animate-pulse uppercase">Memuat data...</td></tr>
+                    <tr><td colSpan="5" className="text-center py-10 text-slate-400 font-bold animate-pulse uppercase">Memuat data...</td></tr>
                 ) : jabatans.map(j => (
                   <tr key={j.id} className="hover:bg-slate-50/50">
                     <td className="px-10 py-6 text-slate-800 uppercase tracking-tighter">{j.nama_jabatan}</td>
                     <td className="px-6 py-6 text-slate-400 font-medium italic">{j.departemen}</td>
-                    <td className="px-6 py-6 text-emerald-600 font-black tracking-tight">Rp {parseFloat(j.gaji_pokok).toLocaleString('id-ID')}</td>
+                    <td className="px-6 py-6 text-slate-700 font-black tracking-tight">Rp {parseFloat(j.gaji_pokok || 0).toLocaleString('id-ID')}</td>
+                    <td className="px-6 py-6 text-emerald-600 font-black tracking-tight">Rp {parseFloat(j.tunjangan || 0).toLocaleString('id-ID')}</td>
                     <td className="px-10 py-6 text-right space-x-2">
-                      <button onClick={() => {setFormData(j); setIsModalOpen(true);}} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all"><Edit2 size={16}/></button>
+                      <button 
+                        onClick={() => {
+                          setFormData({
+                            ...j, 
+                            tunjangan: j.tunjangan || 0 // Pastikan nilai dari DB ikut terbawa ke form
+                          }); 
+                          setIsModalOpen(true);
+                        }} 
+                        className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all"
+                      >
+                        <Edit2 size={16}/>
+                      </button>
                       <button onClick={async () => { if(window.confirm('Hapus Jabatan?')) { await supabase.from('jabatan').delete().eq('id', j.id); fetchJabatan(); } }} className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={16}/></button>
                     </td>
                   </tr>
@@ -198,13 +220,14 @@ const { data: emps, error: errEmp } = await supabase
           </div>
         </>
       ) : (
+        /* TAB REKAP GAJI */
         <>
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
             <div className="flex items-center space-x-4">
               <div className="p-3 bg-emerald-600 rounded-2xl text-white shadow-lg shadow-emerald-100"><Users /></div>
               <div>
                 <h3 className="text-xl font-black text-slate-800 tracking-tight">Laporan Rekapitulasi Gaji</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase italic">Berdasarkan Akumulasi Jam Kerja Efektif</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase italic">Gaji Pokok + Tunjangan Jabatan</p>
               </div>
             </div>
             <div className="flex items-center space-x-3 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
@@ -218,8 +241,8 @@ const { data: emps, error: errEmp } = await supabase
               <thead className="bg-slate-900 text-white text-[10px] uppercase tracking-widest font-black">
                 <tr>
                   <th className="px-10 py-7">Karyawan</th>
-                  <th className="px-6 py-7">Struktur</th>
                   <th className="px-6 py-7">Gaji Pokok</th>
+                  <th className="px-6 py-7">Tunjangan</th>
                   <th className="px-6 py-7 text-center">Total Jam</th>
                   <th className="px-10 py-7 text-center">Hasil Performa</th>
                 </tr>
@@ -227,17 +250,17 @@ const { data: emps, error: errEmp } = await supabase
               <tbody className="divide-y divide-slate-50 font-bold text-xs uppercase">
                 {loading ? (
                     <tr><td colSpan="5" className="text-center py-10 text-slate-400 font-bold animate-pulse uppercase tracking-widest">Menghitung rekapitulasi...</td></tr>
-                ) : rekapGaji.length === 0 ? (
-                    <tr><td colSpan="5" className="text-center py-10 text-slate-400 font-bold uppercase tracking-widest">Tidak ada data absensi untuk bulan ini</td></tr>
                 ) : rekapGaji.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-10 py-6 font-black text-slate-800 leading-tight">{r.nama_lengkap}</td>
-                    <td className="px-6 py-6">
-                      <p className="text-slate-600 font-bold">{r.jabatan?.nama_jabatan || '-'}</p>
-                      <p className="text-[9px] text-indigo-500 font-black tracking-widest leading-none mt-1">{r.departemen}</p>
+                    <td className="px-10 py-6 font-black text-slate-800 leading-tight">
+                        {r.nama_lengkap}
+                        <p className="text-[9px] text-indigo-500 font-black tracking-widest mt-1 uppercase">{r.jabatan?.nama_jabatan || '-'}</p>
                     </td>
                     <td className="px-6 py-6 text-slate-700 font-mono text-sm tracking-tighter">
-                      {r.jabatan ? `Rp ${parseFloat(r.jabatan.gaji_pokok || 0).toLocaleString('id-ID')}` : <span className="text-rose-400 italic text-[10px]">Belum Diatur</span>}
+                      Rp {parseFloat(r.jabatan?.gaji_pokok || 0).toLocaleString('id-ID')}
+                    </td>
+                    <td className="px-6 py-6 text-emerald-600 font-mono text-sm tracking-tighter">
+                      Rp {parseFloat(r.jabatan?.tunjangan || 0).toLocaleString('id-ID')}
                     </td>
                     <td className="px-6 py-6 text-center">
                       <div className="inline-flex items-center px-4 py-2 bg-slate-100 rounded-xl font-black text-indigo-600">
@@ -263,27 +286,42 @@ const { data: emps, error: errEmp } = await supabase
         </>
       )}
 
-      {/* MODAL MASTER JABATAN */}
+      {/* MODAL MASTER JABATAN (LOGIKA INPUT) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl animate-in zoom-in duration-200 text-left border-4 border-indigo-600">
             <div className="flex justify-between items-center mb-8">
-              <h4 className="font-black text-2xl text-slate-800 tracking-tight uppercase tracking-tight">{formData.id ? 'Edit' : 'Entry'} Jabatan</h4>
+              <h4 className="font-black text-2xl text-slate-800 tracking-tight uppercase">{formData.id ? 'Edit' : 'Entry'} Jabatan</h4>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X /></button>
             </div>
             <div className="space-y-5">
                <div className="space-y-1">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nama Jabatan</label>
-                 <input placeholder="Senior Manager" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none focus:border-indigo-600 transition-all shadow-inner" value={formData.nama_jabatan} onChange={e => setFormData({...formData, nama_jabatan: e.target.value})} />
+                 <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none focus:border-indigo-600 transition-all shadow-inner" value={formData.nama_jabatan} onChange={e => setFormData({...formData, nama_jabatan: e.target.value})} />
                </div>
                <div className="space-y-1">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Departemen</label>
-                 <input placeholder="Produksi / IT" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none focus:border-indigo-600 transition-all shadow-inner" value={formData.departemen} onChange={e => setFormData({...formData, departemen: e.target.value})} />
+                 <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none focus:border-indigo-600 transition-all shadow-inner" value={formData.departemen} onChange={e => setFormData({...formData, departemen: e.target.value})} />
                </div>
+               
                <div className="space-y-1">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Gaji Pokok (Nominal)</label>
-                 <input type="number" placeholder="5000000" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-emerald-600 outline-none focus:border-indigo-600 transition-all shadow-inner" value={formData.gaji_pokok} onChange={e => setFormData({...formData, gaji_pokok: e.target.value})} />
+                 <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-slate-700 outline-none focus:border-indigo-600 shadow-inner" value={formData.gaji_pokok} onChange={e => setFormData({...formData, gaji_pokok: e.target.value})} />
                </div>
+
+               {/* LOGIKA INPUT TUNJANGAN */}
+               <div className="space-y-1">
+                 <label className="text-[10px] font-black text-emerald-600 uppercase ml-2 tracking-widest flex items-center">
+                    <Coins size={10} className="mr-1"/> Tunjangan Jabatan
+                 </label>
+                 <input 
+                   type="number" 
+                   className="w-full bg-emerald-50 border-2 border-emerald-100 rounded-2xl px-6 py-4 font-black text-emerald-600 outline-none focus:border-indigo-600 shadow-inner" 
+                   value={formData.tunjangan} 
+                   onChange={e => setFormData({...formData, tunjangan: e.target.value})} 
+                 />
+               </div>
+
                <button onClick={handleSave} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-slate-900 transition-all flex items-center justify-center uppercase tracking-[0.2em] text-xs">
                  <Save className="mr-3" size={16}/> Simpan Data Jabatan
                </button>

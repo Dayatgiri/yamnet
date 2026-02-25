@@ -9,7 +9,6 @@ const Report = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // --- STATE FILTER RENTANG TANGGAL ---
   const [startDate, setStartDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [endDate, setEndDate] = useState(new Date().toLocaleDateString('en-CA'));
   
@@ -25,7 +24,6 @@ const Report = () => {
     fetchData();
   }, [startDate, endDate]);
 
-  // --- LOGIKA PERHITUNGAN JAM KERJA EFEKTIF ---
   const calculateWorkHours = (jamM, jamP, targetM, targetP) => {
     if (jamM === "-" || jamP === "-") return "-";
     const toMinutes = (timeStr) => {
@@ -52,7 +50,6 @@ const Report = () => {
         .from('karyawan')
         .select('*, master_shift(nama_shift, jam_masuk, jam_pulang)');
 
-      // Menyesuaikan rentang waktu agar mencakup satu hari penuh (00:00 - 23:59)
       const start = `${startDate}T00:00:00Z`;
       const end = `${endDate}T23:59:59Z`;
 
@@ -80,7 +77,6 @@ const Report = () => {
           return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':');
         };
 
-        // --- FUNGSI STATUS TERLAMBAT / PULANG AWAL (DIKEMBALIKAN) ---
         const getStatus = (jamAbsenStr, type) => {
           if (jamAbsenStr === "-") return { id: 'none', txt: "BELUM ABSEN", col: "text-slate-400" };
           const [hAbsen, mAbsen] = jamAbsenStr.split(':').map(Number);
@@ -113,6 +109,7 @@ const Report = () => {
         const jamP = extractToWIB(outData);
 
         return {
+          idKaryawan: emp.id, // Simpan ID Karyawan untuk proses hapus
           nama: emp.nama_lengkap,
           nik: emp.nik || '-',
           namaShift: emp.master_shift?.nama_shift || 'Reguler',
@@ -131,6 +128,31 @@ const Report = () => {
       console.error("Fetch error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // --- FUNGSI HAPUS RECORD ---
+  const handleDelete = async (empId, nama) => {
+    const confirmDelete = window.confirm(`Hapus seluruh log presensi ${nama} pada rentang ${startDate} s/d ${endDate}?`);
+    if (!confirmDelete) return;
+
+    try {
+      const start = `${startDate}T00:00:00Z`;
+      const end = `${endDate}T23:59:59Z`;
+
+      const { error } = await supabase
+        .from('absensi')
+        .delete()
+        .eq('karyawan_id', empId)
+        .gte('waktu_absen', start)
+        .lte('waktu_absen', end);
+
+      if (error) throw error;
+      
+      alert("🎉 Log Presensi berhasil dihapus!");
+      fetchData(); // Refresh data setelah hapus
+    } catch (error) {
+      alert("Gagal menghapus: " + error.message);
     }
   };
 
@@ -214,7 +236,20 @@ const Report = () => {
                   </div>
                 </td>
                 <td className="px-10 py-6 text-right">
-                  <button onClick={() => { setEditingData(row); setFormData({ masuk: row.jamMasuk, pulang: row.jamPulang }); setIsModalOpen(true); }} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all"><Edit2 size={16}/></button>
+                  <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => { setEditingData(row); setFormData({ masuk: row.jamMasuk, pulang: row.jamPulang }); setIsModalOpen(true); }} 
+                      className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                    >
+                      <Edit2 size={16}/>
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(row.idKaryawan, row.nama)} 
+                      className="p-3 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                    >
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -222,7 +257,7 @@ const Report = () => {
         </table>
       </div>
 
-      {/* MODAL EDIT (DIKEMBALIKAN) */}
+      {/* MODAL EDIT */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl animate-in zoom-in duration-200">

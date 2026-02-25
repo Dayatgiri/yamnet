@@ -3,7 +3,8 @@ import { supabase } from '../supabaseClient';
 import { 
   MapPin, Clock, Save, Building2, Target, 
   Fingerprint, ScanFace, Settings2,
-  X, Edit2, Trash2, Plus, ShieldCheck
+  X, Edit2, Trash2, Plus, ShieldCheck,
+  Upload, Image as ImageIcon, MousePointer2
 } from 'lucide-react';
 
 const ManajemenKantor = () => {
@@ -13,23 +14,27 @@ const ManajemenKantor = () => {
   const [activeTab, setActiveTab] = useState('KANTOR'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  // State untuk URL Preview Logo
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [buttonLogoUrl, setButtonLogoUrl] = useState(null);
 
   const [formData, setFormData] = useState({
     nama_kantor: '', alamat: '', latitude: '', longitude: '', radius: 50, tipe_absensi: 'FACE',
     min_jam_bulanan: 112,
     nama_shift: '', jam_masuk: '08:00', jam_pulang: '17:00',
-    kantor_id: '' // State untuk UUID Kantor (Relasi)
+    kantor_id: '' 
   });
 
   useEffect(() => {
     fetchData();
+    fetchLogos();
   }, []);
 
   async function fetchData() {
     setLoading(true);
     try {
       const { data: kantor } = await supabase.from('kantor').select('*').order('created_at', { ascending: false });
-      // JOIN untuk mengambil nama kantor pada daftar shift
       const { data: shift } = await supabase.from('master_shift').select('*, kantor(nama_kantor)').order('nama_shift', { ascending: true });
       
       if (kantor) setKantorList(kantor);
@@ -41,10 +46,49 @@ const ManajemenKantor = () => {
     }
   }
 
+  // Ambil semua logo (Utama & Button)
+  async function fetchLogos() {
+    const timestamp = new Date().getTime();
+    const { data: main } = supabase.storage.from('assets').getPublicUrl('app_logo.png');
+    const { data: btn } = supabase.storage.from('assets').getPublicUrl('button_logo.png');
+    
+    if (main) setLogoUrl(`${main.publicUrl}?t=${timestamp}`);
+    if (btn) setButtonLogoUrl(`${btn.publicUrl}?t=${timestamp}`);
+  }
+
+  // Fungsi Upload Universal
+  const handleUpload = async (e, fileName) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.storage
+        .from('assets')
+        .upload(fileName, file, {
+          upsert: true,
+          cacheControl: '0'
+        });
+
+      if (error) throw error;
+      alert(`🎉 ${fileName === 'app_logo.png' ? 'Logo Utama' : 'Logo Tombol'} Berhasil Diperbarui!`);
+      fetchLogos(); 
+    } catch (err) {
+      alert("Gagal upload: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpenModal = (item = null) => {
     if (item) {
       setEditingId(item.id);
-      setFormData({ ...item });
+      const { created_at, kantor, ...cleanData } = item;
+      setFormData({ 
+        ...cleanData,
+        min_jam_bulanan: item.min_jam_bulanan || 112,
+        radius: item.radius || 50
+      });
     } else {
       setEditingId(null);
       setFormData({
@@ -62,26 +106,23 @@ const ManajemenKantor = () => {
     setLoading(true);
     const table = activeTab === 'KANTOR' ? 'kantor' : 'master_shift';
     
-    // Payload disesuaikan (UUID tidak menggunakan parseInt/parseFloat)
     const dataPayload = activeTab === 'KANTOR' ? {
       nama_kantor: formData.nama_kantor,
       alamat: formData.alamat,
       latitude: parseFloat(formData.latitude),
       longitude: parseFloat(formData.longitude),
       radius: parseInt(formData.radius),
-      tipe_absensi: formData.tipe_absensi,
+      tipe_absensi: formData.tipe_absensi.toUpperCase(),
       min_jam_bulanan: parseInt(formData.min_jam_bulanan)
     } : {
       nama_shift: formData.nama_shift,
       jam_masuk: formData.jam_masuk,
       jam_pulang: formData.jam_pulang,
-      kantor_id: formData.kantor_id || null // Kirim UUID sebagai string
+      kantor_id: formData.kantor_id || null 
     };
 
     try {
-      // Hapus kolom join fiktif agar tidak error saat insert
       delete dataPayload.kantor;
-
       const { error } = editingId 
         ? await supabase.from(table).update(dataPayload).eq('id', editingId)
         : await supabase.from(table).insert([dataPayload]);
@@ -128,13 +169,41 @@ const ManajemenKantor = () => {
             </button>
         </div>
 
-        <div className="flex space-x-4 bg-slate-50 p-2 rounded-2xl w-fit">
-            <button onClick={() => setActiveTab('KANTOR')} className={`px-6 py-2 rounded-xl font-black text-xs transition-all ${activeTab === 'KANTOR' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>UNIT KANTOR</button>
-            <button onClick={() => setActiveTab('SHIFT')} className={`px-6 py-2 rounded-xl font-black text-xs transition-all ${activeTab === 'SHIFT' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>SHIFT KERJA</button>
+        <div className="flex flex-wrap items-center justify-between gap-6 pt-4 border-t border-slate-50">
+            {/* TAB BUTTONS */}
+            <div className="flex space-x-4 bg-slate-50 p-2 rounded-2xl w-fit">
+                <button onClick={() => setActiveTab('KANTOR')} className={`px-6 py-2 rounded-xl font-black text-xs transition-all ${activeTab === 'KANTOR' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>UNIT KANTOR</button>
+                <button onClick={() => setActiveTab('SHIFT')} className={`px-6 py-2 rounded-xl font-black text-xs transition-all ${activeTab === 'SHIFT' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>SHIFT KERJA</button>
+            </div>
+
+            {/* AREA UPLOAD LOGO DUAL */}
+            <div className="flex flex-wrap gap-4">
+                {/* 1. Logo Utama */}
+                <div className="flex items-center bg-slate-50 p-2 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="w-10 h-10 bg-white rounded-lg overflow-hidden border border-slate-200 mr-3 flex items-center justify-center">
+                        {logoUrl ? <img src={logoUrl} alt="Main" className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-300 w-5 h-5"/>}
+                    </div>
+                    <label className="cursor-pointer bg-white hover:bg-blue-50 hover:text-blue-600 text-slate-600 px-4 py-2 rounded-xl font-bold text-[9px] uppercase tracking-wider flex items-center transition-all border border-slate-200 shadow-sm">
+                        <Upload className="w-3 h-3 mr-2" /> {loading ? '...' : 'Logo Utama'}
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleUpload(e, 'app_logo.png')} disabled={loading} />
+                    </label>
+                </div>
+
+                {/* 2. Logo Tombol */}
+                <div className="flex items-center bg-slate-900 p-2 rounded-2xl shadow-lg shadow-slate-200">
+                    <div className="w-10 h-10 bg-slate-800 rounded-lg overflow-hidden border border-slate-700 mr-3 flex items-center justify-center p-1">
+                        {buttonLogoUrl ? <img src={buttonLogoUrl} alt="Btn" className="w-full h-full object-contain" /> : <MousePointer2 className="text-slate-500 w-4 h-4"/>}
+                    </div>
+                    <label className="cursor-pointer bg-blue-600 hover:bg-white hover:text-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[9px] uppercase tracking-wider flex items-center transition-all shadow-sm">
+                        <Upload className="w-3 h-3 mr-2" /> {loading ? '...' : 'Logo Button'}
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleUpload(e, 'button_logo.png')} disabled={loading} />
+                    </label>
+                </div>
+            </div>
         </div>
       </div>
 
-      {/* RENDER LIST */}
+      {/* RENDER LIST (KANTOR / SHIFT) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {activeTab === 'KANTOR' ? kantorList.map((k) => (
           <div key={k.id} className="bg-white rounded-[3rem] border border-slate-100 shadow-sm p-8 group hover:shadow-2xl transition-all duration-500 text-left">
@@ -191,7 +260,7 @@ const ManajemenKantor = () => {
         ))}
       </div>
 
-      {/* MODAL GABUNGAN */}
+      {/* MODAL GABUNGAN (TETAP SAMA) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl my-auto animate-in zoom-in duration-300 overflow-hidden text-left">

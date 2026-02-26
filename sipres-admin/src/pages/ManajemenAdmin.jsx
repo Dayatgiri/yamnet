@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-// PERBAIKAN: Gunakan library utama agar createClient tersedia dengan benar
 import { createClient } from '@supabase/supabase-js'; 
 import { 
   UserPlus, Trash2, Edit3, ShieldCheck, Mail, 
@@ -32,37 +31,53 @@ const ManajemenAdmin = () => {
     fetchAdmins();
   }, []);
 
-  async function fetchAdmins() {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('full_name', { ascending: true });
-      if (error) throw error;
-      setAdmins(data || []);
-    } catch (error) {
-      console.error("Gagal memuat admin:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+async function fetchAdmins() {
+  try {
+    setLoading(true);
+    
+    const { data: authAdmins } = await supabase
+      .from('profiles')
+      .select('*')
+      .or('role.eq.admin,role.eq.superadmin');
 
-  // --- 1. CREATE: Tambah Admin Baru (Anti Log-Out) ---
+    const { data: masterAdmins } = await supabase
+      .from('karyawan')
+      .select('*')
+      .or('role.eq.admin,role.eq.superadmin');
+
+    const combined = [
+      ...(authAdmins || []).map(a => ({ 
+        ...a, 
+        source: 'profiles',
+        // Gunakan full_name, jika tidak ada pakai nama_lengkap
+        display_name: a.full_name || a.nama_lengkap 
+      })),
+      ...(masterAdmins || []).map(a => ({ 
+        ...a, 
+        source: 'karyawan',
+        // Gunakan nama_lengkap, jika tidak ada pakai full_name
+        display_name: a.nama_lengkap || a.full_name 
+      }))
+    ];
+
+    combined.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+    setAdmins(combined);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setLoading(false);
+  }
+}
+
   const handleAddAdmin = async (e) => {
     e.preventDefault();
     setIsProcessing(true);
-
     try {
-      // PERBAIKAN: Inisialisasi client kedua tanpa persistensi sesi
       const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: { 
-          persistSession: false,
-          autoRefreshToken: false 
-        }
+        auth: { persistSession: false, autoRefreshToken: false }
       });
 
-      const { data, error } = await tempSupabase.auth.signUp({
+      const { error } = await tempSupabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -75,11 +90,10 @@ const ManajemenAdmin = () => {
 
       if (error) throw error;
 
-      alert("Admin baru berhasil didaftarkan! Sesi Anda tetap aman.");
+      alert("Admin baru berhasil didaftarkan!");
       setIsAddModalOpen(false);
       setFormData({ full_name: '', email: '', password: '', role: 'admin' });
       fetchAdmins(); 
-
     } catch (error) {
       alert("Gagal daftar: " + error.message);
     } finally {
@@ -87,13 +101,15 @@ const ManajemenAdmin = () => {
     }
   };
 
-  // --- 2. UPDATE: Edit Data Admin ---
   const handleUpdate = async (e) => {
     e.preventDefault();
     setIsProcessing(true);
     try {
+      // Deteksi tabel tujuan berdasarkan source data
+      const targetTable = selectedAdmin.source || 'profiles';
+      
       const { error } = await supabase
-        .from('profiles')
+        .from(targetTable)
         .update({
           full_name: formData.full_name,
           role: formData.role
@@ -102,7 +118,7 @@ const ManajemenAdmin = () => {
 
       if (error) throw error;
 
-      alert("Data berhasil diperbarui!");
+      alert(`Data berhasil diperbarui di tabel ${targetTable}!`);
       setIsEditModalOpen(false);
       fetchAdmins();
     } catch (error) {
@@ -112,9 +128,7 @@ const ManajemenAdmin = () => {
     }
   };
 
-  // --- 3. DELETE: Hapus Akses Admin ---
-  const handleDelete = async (id, name) => {
-    // Proteksi tambahan: Jangan hapus akun sendiri
+  const handleDelete = async (id, name, source) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user.id === id) {
       alert("Anda tidak dapat menghapus akun Anda sendiri.");
@@ -123,9 +137,12 @@ const ManajemenAdmin = () => {
 
     if (window.confirm(`Hapus akses admin untuk ${name}?`)) {
       try {
-        const { error } = await supabase.from('profiles').delete().eq('id', id);
+        const targetTable = source || 'profiles';
+        const { error } = await supabase.from(targetTable).delete().eq('id', id);
         if (error) throw error;
-        setAdmins(admins.filter(a => a.id !== id));
+        
+        alert("Akses berhasil dihapus.");
+        fetchAdmins();
       } catch (error) {
         alert("Gagal menghapus: " + error.message);
       }
@@ -143,7 +160,7 @@ const ManajemenAdmin = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter text-left">Manajemen Admin</h2>
-          <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1 italic text-left">Daftar Admin & Operator Terdaftar</p>
+          <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1 italic text-left">Otoritas Gabungan (Auth & Karyawan)</p>
         </div>
         <button 
           onClick={() => {
@@ -172,34 +189,43 @@ const ManajemenAdmin = () => {
             <tr>
               <th className="px-8 py-6">Admin</th>
               <th className="px-8 py-6 text-center">Otoritas</th>
+              <th className="px-8 py-6 text-center">Sumber</th>
               <th className="px-8 py-6 text-center">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y-4 divide-slate-50">
             {loading ? (
-              <tr><td colSpan="3" className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" /></td></tr>
-            ) : admins.filter(a => a.full_name?.toLowerCase().includes(searchTerm.toLowerCase())).map((admin) => (
+              <tr><td colSpan="4" className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" /></td></tr>
+            ) : admins.filter(a => (a.full_name || '').toLowerCase().includes(searchTerm.toLowerCase())).map((admin) => (
               <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-8 py-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl border-2 border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {admin.avatar_url ? <img src={admin.avatar_url} className="w-full h-full object-cover" alt="Profile" /> : <User className="text-slate-400" />}
-                    </div>
-                    <div className="text-left">
-                      <p className="font-black text-slate-800 text-sm uppercase leading-tight">{admin.full_name || 'Tanpa Nama'}</p>
-                      <p className="text-[10px] font-bold text-slate-400 lowercase">{admin.email}</p>
-                    </div>
-                  </div>
-                </td>
+<td className="px-8 py-6">
+  <div className="flex items-center gap-4">
+    <div className="w-12 h-12 bg-slate-100 rounded-2xl border-2 border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+      {admin.avatar_url ? <img src={admin.avatar_url} className="w-full h-full object-cover" alt="Profile" /> : <User className="text-slate-400" />}
+    </div>
+    <div className="text-left">
+      {/* PERBAIKAN DI SINI: Gunakan display_name yang sudah di-mapping */}
+      <p className="font-black text-slate-800 text-sm uppercase leading-tight">
+        {admin.display_name || 'Tanpa Nama'}
+      </p>
+      <p className="text-[10px] font-bold text-slate-400 lowercase">{admin.email}</p>
+    </div>
+  </div>
+</td>
                 <td className="px-8 py-6 text-center">
                   <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${admin.role === 'superadmin' ? 'bg-rose-600 text-white shadow-lg' : 'bg-blue-100 text-blue-600'}`}>
                     {admin.role}
                   </span>
                 </td>
-                <td className="px-8 py-6">
+                <td className="px-8 py-6 text-center">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                    {admin.source === 'karyawan' ? 'Tabel Karyawan' : 'Tabel Profiles'}
+                  </span>
+                </td>
+                <td className="px-8 py-6 text-center">
                   <div className="flex items-center justify-center gap-2">
-                    <button onClick={() => openEditModal(admin)} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-95"><Edit3 size={16} /></button>
-                    <button onClick={() => handleDelete(admin.id, admin.full_name)} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm active:scale-95"><Trash2 size={16} /></button>
+                    <button onClick={() => openEditModal(admin)} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Edit3 size={16} /></button>
+                    <button onClick={() => handleDelete(admin.id, admin.full_name, admin.source)} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>
                   </div>
                 </td>
               </tr>
@@ -214,7 +240,7 @@ const ManajemenAdmin = () => {
             <div className="bg-slate-900 p-8 text-white flex justify-between items-center text-left">
               <div>
                 <h3 className="font-black uppercase tracking-tighter text-xl">{isAddModalOpen ? 'Daftar Admin Baru' : 'Edit Otoritas Admin'}</h3>
-                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest italic text-left">GMT+7 | Sesi Tetap Aman</p>
+                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest italic text-left">Sumber: {selectedAdmin?.source || 'Auth System'}</p>
               </div>
               <button onClick={() => { setIsAddModalOpen(false); setIsEditModalOpen(false); }} className="text-slate-400 hover:text-white transition-colors p-2"><X /></button>
             </div>
@@ -262,7 +288,7 @@ const ManajemenAdmin = () => {
                 </div>
               </div>
 
-              <button type="submit" disabled={isProcessing} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-xs hover:bg-slate-900 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-blue-100">
+              <button type="submit" disabled={isProcessing} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-xs hover:bg-slate-900 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl">
                 {isProcessing ? <Loader2 className="animate-spin" /> : <Check size={20} />}
                 {isProcessing ? 'Memproses...' : (isAddModalOpen ? 'Konfirmasi Pendaftaran' : 'Simpan Perubahan')}
               </button>

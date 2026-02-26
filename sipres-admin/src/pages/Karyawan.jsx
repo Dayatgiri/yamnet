@@ -49,23 +49,30 @@ const Karyawan = () => {
     if (data) setJabatans(data);
   }
 
-  async function fetchKaryawan() {
+async function fetchKaryawan() {
     try {
       setLoading(true);
+      
+      // Ambil data karyawan
       const { data, error } = await supabase
         .from('karyawan')
-        // DITAMBAHKAN: jam_pulang ke dalam select join master_shift
         .select('*, master_shift(nama_shift, jam_masuk, jam_pulang), jabatan(nama_jabatan, departemen)')
+        // FILTER TERBAIK: Hanya ambil yang rolenya 'USER', 'user', atau Kosong
+        // Ini otomatis akan membuang 'admin' dan 'superadmin'
+        .or('role.ilike.user,role.is.null') 
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      setKaryawan(data || []);
+
+      // PERBAIKAN: Hapus setAdmins, gunakan setKaryawan saja
+      setKaryawan(data || []); 
+      
     } catch (err) {
       console.error("Gagal memuat data:", err.message);
     } finally {
       setLoading(false);
     }
-  }
+}
 
   const getAvatarUrl = (userId) => {
     const { data } = supabase.storage.from('avatars').getPublicUrl(`face_${userId}.jpg`);
@@ -80,7 +87,7 @@ const Karyawan = () => {
     }
   };
 
-  const handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nama_lengkap) return alert("Nama Lengkap wajib diisi!");
     
@@ -89,11 +96,14 @@ const Karyawan = () => {
       let userId = editingId;
       const payload = { 
         ...formData, 
+        // DISESUAIKAN: Gunakan 'USER' (kapital) agar sama dengan data CSV kamu
+        role: 'USER', 
         shift_id: formData.shift_id || null,
         jabatan_id: formData.jabatan_id || null,
         password: formData.password || '123456' 
       };
 
+      // Bersihkan properti join agar tidak error
       delete payload.master_shift;
       delete payload.jabatan; 
 
@@ -121,8 +131,7 @@ const Karyawan = () => {
     } finally {
       setLoading(false);
     }
-  };
-
+};
   const handleDelete = async (id, nama) => {
     if (window.confirm(`Hapus data dan foto biometrik ${nama}?`)) {
       try {

@@ -1,15 +1,16 @@
 import React from 'react';
 import { LogOut } from 'lucide-react';
+import appLogo from '../assets/applogo.png';
 
 const Sidebar = ({ menuItems, activeTab, setActiveTab, onLogout }) => {
   return (
     <aside className="w-72 bg-slate-900 text-slate-300 flex flex-col shadow-2xl shrink-0">
       <div className="p-8 flex items-center space-x-3">
-        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-          <span className="text-white font-black text-xl">S</span>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
+          <img src={appLogo} alt="Logo Ajeg" className="h-8 w-auto object-contain" />
         </div>
         <span className="text-xl font-black tracking-tight text-white uppercase">
-          Sipres<span className="text-blue-500">.</span>
+          Ajeg<span className="text-blue-500">.</span>
         </span>
       </div>
 

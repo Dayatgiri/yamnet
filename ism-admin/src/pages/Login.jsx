@@ -12,14 +12,22 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data, error } = await supabase
+        .from('admin') 
+        .select('*')
+        .eq('email', email)
+        .eq('password', password)
+        .single();
 
-      if (error) throw error;
-      // Jika berhasil, Supabase akan otomatis update session dan App.jsx akan merender Dashboard
+      if (error || !data) {
+        throw new Error("Email atau Password Admin salah!");
+      }
+
+      localStorage.setItem('admin_session', JSON.stringify(data));
+      window.location.reload(); 
+
     } catch (error) {
+      console.error("Login Error:", error);
       alert("Login Gagal: " + error.message);
     } finally {
       setLoading(false);
@@ -27,10 +35,10 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans text-left">
       <div className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl border-4 border-blue-600 overflow-hidden animate-in zoom-in duration-500">
         
-        {/* HEADER LOGIN */}
+        {/* HEADER */}
         <div className="bg-slate-900 p-10 text-center relative overflow-hidden">
           <div className="relative z-10 flex flex-col items-center">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-500/50">
@@ -42,7 +50,7 @@ const Login = () => {
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 rounded-full -mr-16 -mt-16 blur-3xl"></div>
         </div>
 
-        {/* FORM LOGIN */}
+        {/* FORM */}
         <form onSubmit={handleLogin} className="p-10 space-y-6">
           <div className="space-y-2">
             <label className="text-[11px] font-black text-blue-600 uppercase tracking-widest ml-1">Alamat Email</label>
@@ -51,7 +59,7 @@ const Login = () => {
               <input 
                 required
                 type="email" 
-                placeholder="admin@wonogiri.go.id"
+                placeholder="admin@majalengka.go.id"
                 className="w-full bg-blue-50 border-2 border-blue-100 rounded-2xl pl-14 pr-6 py-4 font-bold text-slate-700 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all outline-none"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -88,7 +96,7 @@ const Login = () => {
           </button>
 
           <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-tight">
-            Wonogiri Attendance System &copy; 2026
+            Sipres Majalengka &copy; 2026
           </p>
         </form>
       </div>

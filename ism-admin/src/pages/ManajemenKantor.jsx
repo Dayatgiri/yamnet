@@ -161,7 +161,7 @@ const ManajemenKantor = () => {
                     <Settings2 className="w-8 h-8" />
                 </div>
                 <div>
-                    <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Sipres<span className="text-blue-500">.</span> Admin</h3>
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Pengaturan Kantor dan Jadwal</h3>
                     <p className="text-slate-400 font-medium italic">Pengaturan Unit & Jadwal</p>
                 </div>
             </div>

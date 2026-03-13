@@ -7,6 +7,7 @@ import {
 // Import library tambahan untuk Export (Pastikan sudah npm install xlsx jspdf jspdf-autotable)
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
 
 const Report = () => {
@@ -49,18 +50,53 @@ const Report = () => {
   };
 
   // --- FITUR EXPORT PDF ---
-  const exportToPDF = () => {
-    const doc = new jsPDF('l', 'mm', 'a4');
-    doc.text(`Laporan Presensi (${startDate} s/d ${endDate})`, 14, 15);
-    const tableRows = filteredData.map(row => [
-      row.nama, row.nik, row.namaShift, row.jamMasuk, row.jamPulang, row.totalKerja
-    ]);
-    doc.autoTable({
-      head: [['Nama', 'NIK', 'Shift', 'Masuk', 'Pulang', 'Total']],
-      body: tableRows,
-      startY: 20
-    });
-    doc.save(`Laporan_Presensi_${startDate}.pdf`);
+const exportToPDF = () => {
+    try {
+      if (filteredData.length === 0) {
+        alert("Tidak ada data untuk diekspor!");
+        return;
+      }
+
+      const doc = new jsPDF('l', 'mm', 'a4');
+
+      // Tambahkan Judul
+      doc.setFontSize(18);
+      doc.text("LAPORAN PRESENSI KARYAWAN", 14, 15);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Periode: ${startDate} s/d ${endDate}`, 14, 22);
+
+      // Mapping Data
+      const tableRows = filteredData.map(row => [
+        row.nama.toUpperCase(),
+        row.nik,
+        row.namaShift,
+        row.jamMasuk,
+        row.jamPulang,
+        row.totalKerja,
+        row.statM.txt
+      ]);
+
+      // PANGGIL autoTable SECARA LANGSUNG
+      autoTable(doc, {
+        head: [['NAMA', 'NIK', 'SHIFT', 'MASUK', 'PULANG', 'DURASI', 'STATUS']],
+        body: tableRows,
+        startY: 30,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], fontSize: 9, halign: 'center' },
+        styles: { fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 50 }, // Nama lebih lebar
+          6: { fontStyle: 'bold' } // Status tebal
+        }
+      });
+
+      doc.save(`Laporan_Presensi_${startDate}.pdf`);
+    } catch (error) {
+      console.error("Detail Error:", error);
+      alert("Terjadi kesalahan teknis. Silakan cek Console (F12) untuk detailnya.");
+    }
   };
 
   // --- FITUR SIMPAN KOREKSI ---

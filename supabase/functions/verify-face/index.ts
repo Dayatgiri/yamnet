@@ -20,13 +20,21 @@ Deno.serve(async (req) => {
     )
 
     // 1. Dapatkan URL Publik dari kedua foto
-    const { data: masterPhoto } = supabase.storage.from('avatars').getPublicUrl(`face_${user_id}.jpg`)
-    const { data: tempPhoto } = supabase.storage.from('temp_verifikasi').getPublicUrl(temp_filename)
+    const { data: masterPhoto } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(`face_${user_id}.jpg`)
+    
+    const { data: tempPhoto } = supabase.storage
+      .from('temp_verifikasi')
+      .getPublicUrl(temp_filename)
 
-    // 👇 Kredensial Face++ Anda 👇
-    const FACE_API_KEY = "16e_7mA_DeRiTlKEVMEYpWt-t93rCur_"
-    const FACE_API_SECRET = "GSJUS6P6x41CIrfOAOOxvxtYu5dN_g1P"
+    // PENCATATAN LOG URL
+    console.log("Master URL:", masterPhoto.publicUrl)
+    console.log("Temp URL:", tempPhoto.publicUrl)
 
+    // 👇 Kredensial Face++ BARU Anda 👇
+    const FACE_API_KEY = "Ciko3UmhGacgIfXp8BkgA32XbC5vxsQT"
+    const FACE_API_SECRET = "eQO8F4EMFsWvaMrXhlEO1bKc2kC96gHk"
     const faceApiUrl = `https://api-us.faceplusplus.com/facepp/v3/compare`
 
     // 3. Siapkan data untuk dikirim ke Face++
@@ -40,16 +48,22 @@ Deno.serve(async (req) => {
     const aiResponse = await fetch(faceApiUrl, { method: 'POST', body: formData })
     const aiResult = await aiResponse.json()
 
+    // PENCATATAN LOG BALASAN ASLI DARI FACE++
+    console.log("HASIL DARI FACE++:", JSON.stringify(aiResult))
+
     // 5. Ekstrak skor kemiripan asli dari AI atau tangkap pesan errornya
     let similarityScore = 0.0
     let debugMessage = "Verifikasi AI selesai."
+    let isSuccess = false
 
     if (aiResult.confidence !== undefined) {
        // Kita bagi 100 agar menjadi format 0.0 - 1.0
        similarityScore = aiResult.confidence / 100.0 
+       isSuccess = true
     } else {
-       // 🔥 JIKA GAGAL, KITA TANGKAP PESAN ERROR DARI FACE++ DISINI 🔥
-       debugMessage = "ERROR FACE++: " + JSON.stringify(aiResult)
+       // MENANGKAP ERROR DAN MENGUBAH STATUS MENJADI FALSE
+       debugMessage = "ERROR FACE++: " + (aiResult.error_message || JSON.stringify(aiResult))
+       console.error("GAGAL MEMBANDINGKAN:", debugMessage)
     }
 
     // 6. Segera hapus foto selfie sementara dari storage
@@ -58,9 +72,9 @@ Deno.serve(async (req) => {
     // 7. Kirim respon kembali ke aplikasi Android
     return new Response(
       JSON.stringify({ 
-        success: true, 
+        success: isSuccess, 
         similarity: similarityScore,
-        message: debugMessage // <-- Pesan ini akan muncul di Logcat Android Anda
+        message: debugMessage 
       }),
       { 
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -69,6 +83,7 @@ Deno.serve(async (req) => {
     )
 
   } catch (error) {
+    console.error("SISTEM ERROR:", error.message)
     return new Response(
       JSON.stringify({ error: error.message }), 
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }

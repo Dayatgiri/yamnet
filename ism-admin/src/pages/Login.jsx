@@ -59,7 +59,7 @@ const Login = () => {
               <input 
                 required
                 type="email" 
-                placeholder="admin@majalengka.go.id"
+                placeholder="admin@email.go.id"
                 className="w-full bg-blue-50 border-2 border-blue-100 rounded-2xl pl-14 pr-6 py-4 font-bold text-slate-700 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all outline-none"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -96,7 +96,7 @@ const Login = () => {
           </button>
 
           <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-tight">
-            Sipres Majalengka &copy; 2026
+            Dayat&copy; 2026
           </p>
         </form>
       </div>

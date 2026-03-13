@@ -128,7 +128,7 @@ const Dashboard = () => {
             </h1>
             <div className="flex items-center gap-4 mt-2">
               <span className="px-4 py-1.5 bg-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest text-white shadow-lg">Superadmin</span>
-              <span className="text-slate-400 text-xs font-bold flex items-center italic tracking-wider"><MapPin size={14} className="mr-1 text-blue-500"/> GMT+7 | Majalengka</span>
+              <span className="text-slate-400 text-xs font-bold flex items-center italic tracking-wider"><MapPin size={14} className="mr-1 text-blue-500"/> GMT+7 | indonesia</span>
             </div>
           </div>
         </div>
